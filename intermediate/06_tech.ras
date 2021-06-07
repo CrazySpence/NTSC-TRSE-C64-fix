@@ -10,7 +10,7 @@ var
 	sine2 : array[256] of byte;
 	
 /*
-    CrazySpence NTSC fix, changed nop(20) to nop(19) this corrected the slow/shaking
+    CrazySpence NTSC fix, changed nop(20) to nop(15) this corrected the slow/shaking
 
 	The classic techtech effect
 	Check out the charset : resources/charsets/waveset.bin
