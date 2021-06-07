@@ -1,0 +1,69 @@
+program baars;
+@use "tables/luminosities"
+/* CrazySpence NTSC fix
+ * -blk table
+ * -constrained the Bars() to 59-216 to free up raster time
+ * switched from fill to memcpyunroll to dump blk tinto cols
+ * added a 7th raster bar for Maximum effort
+ */
+ 
+var
+	cols : array[256] of byte = buildtable("i"); // some random numbers
+	blk  : array[256] of byte = buildtable("0"); //0 aka Black NTSC Fix --CrazySpence
+    zp,cp: pointer;
+	i,j,k,time : byte;
+
+
+procedure Bars();
+begin
+	asm("
+	ldx #59
+lp:
+	lda cols,x
+	cpx $D012
+	bne *-3
+	sta $d021
+	inx
+	cpx #216
+	bne lp
+	
+	");
+end;
+
+procedure DrawBar(pos:byte);
+begin
+	zp:=#cols + pos;
+	memcpy(#Luminosities::fromBlack,0,zp,32); // copy lumi table to the color table  
+end;
+
+
+procedure UpdateBars();
+begin
+	j:=time;
+	for k:=0 to 7 do
+	begin
+		DrawBar(sine[j]/2 + 58);
+		j+=16;
+	end;	
+	time+=2;
+end;
+
+
+interrupt Raster();
+begin
+	startirq(1);
+	screen_bg_col:=black;
+	Bars();
+	// Fill the bars to zero each frame
+	//fill(#cols,0,0); // 256 zeros  //works on PAL, bad for for NTSC
+	memcpyunroll(#blk,0,#cols,256); //dump black table into cols table NTSC fix
+    UpdateBars();
+	closeirq();
+end;
+
+	
+begin
+	disableciainterrupts();
+	startrasterchain(Raster(),0,1);
+	loop();
+end.
