@@ -1,0 +1,311 @@
+program CrazySpence;
+var
+	const useKernal:byte=0;
+	
+    //various variables
+    ch,x,y,time,i,dx,dy,t,c,val,c2x, c2y,ax, ay: byte = 0;  
+    saddr: array[25] of integer; // Screen address table
+	caddr: array[25] of integer; // Color adress table
+	
+    //boxes
+	box: array[8] of byte = ($55, $43, $49, $5d, $4b, $43, $4a, $5d);
+    
+    //colour pointers
+    colorP: pointer;
+    crazyP: pointer;
+    
+    // nice colours
+	lightfade : array [] of byte = (11,6,12,12,4,14,15,1,1,1,1,15,14,4,12,12,6,11,1,1); 
+	firefade  : array [] of byte = (11,2,12,12,8,10,7,0,0,0,0,7,10,8,12,12,2,11,1,1);
+    // mini sine table
+    siny : array[25] of byte; 
+	sinx : array[screen_width] of byte; 
+
+	// Lookup table for division by 16
+	lookupDiv16 : array[256] of byte;
+
+    // charset will be placed at $2000 in bank 1	
+	const charsetLocation: address = $3800;
+    // look in the character set
+ 	const baseCharacter:byte = $68;
+
+	// Use custom charset
+	charset: IncBin("resources/charsets/charset.bin",charsetLocation);
+	
+	//plasma starting/ending vars
+	yStart:byte = 0;
+	yEnd:byte = 25;
+	xStart:byte = 0;
+	xEnd:byte = 40;
+    
+    yStart2:byte = 0;
+	yEnd2:byte = 25;
+	xStart2:byte = 0;
+	xEnd2:byte = 40;
+
+procedure C128WaitForBlank();
+
+begin
+    WaitForRaster(6);	
+end;
+
+procedure CircleSpence();
+
+begin
+    x:=0;
+    y:=0;
+ 	clearscreen(white,^$D800);
+	clearscreen($20,^$0400);
+	// Set black border
+	screen_bg_col:=black;
+	// infinite loop
+	while (ch <> key_space) do
+	begin
+		// Make sure we wait for 1 raster cycle to complete
+		C128WaitForBlank();
+		//Instead of doing ClearScreen every screen which I found to cause cycle conflict just blank the last spot before updating xy --CS
+        printstring("           ",0,11); 
+        moveto(16,12,$04); //Move to this location in the screen
+        printstring("PRESS SPACE",0,11);
+		// Calculate x,y some sine values (making a circle)
+		// if sine[x] then sine[x+64] is equal to cosine  
+		x:=sine[time]/12 + 6;		
+		y:=sine[time+64]/16 + 4;		
+		// move "screenmemory" cursor to x,y at screen memory $0400
+		moveto(x,y,hi(screen_char_loc));
+		printstring("CRAZYSPENCE",0,11);
+		time:=time+1;
+		ch := GetKey();
+	end;
+end;
+
+procedure CrazyBoxes;
+/*
+
+	This tutorial draws boxes on the screen using the "drawcolortextbox" method. This method
+	requires pointers to screen address tables, which are set up using the createaddresstable methods.
+
+	createaddresstable lets the user create a lookup table instead of using multiplications. example:
+	to find the adress on the screen, a "address:=position + y*40;" multiplication is required. An adress
+	table eliminates the need of having this multiplication, and relies solely on a lookup.  	
+
+*/
+
+begin
+	// Set screen background/border color
+	screen_bg_col:=black;
+	screen_fg_col:=black;
+	
+    clearscreen(key_space, screen_char_loc);
+    clearscreen(black, screen_col_loc);
+	// Sets up the address tables for the screen & color memory    
+	createaddresstable(#saddr,screen_char_loc,SCREEN_WIDTH,25);
+	createaddresstable(#caddr,screen_col_loc,40,25);
+
+	// dx and dy are initialized to 1
+	dx:=1;
+	dy:=1;
+	x:=0;
+	y:=0;
+	colorP:=screen_col_loc;
+	colorP := colorP + screen_width * 12 + 14; //Location of Static CrazySpence Box
+	while (ch <> key_space) do 
+	begin
+		// Make sure we only draw 1 box per frame
+		C128WaitForBlank();
+		// Add the delta dx and dy to x and y
+		x:=x+dx;
+		y:=y+dy;
+		// Flip dx and dy when borders are reached
+	    case x of
+		    	31: dx := -1;
+		    	0: dx := 1;
+		end;
+	    case y of
+	    		20: dy := -1;
+	    		0: dy := 1;
+		end;
+		// Make sure that t loops from 0-15
+		t:=(t+1)&15;
+		// Draw two boxes in opposing corners
+		drawcolortextbox(#saddr, #caddr, #box, x, y, 9, 5, t);
+		drawcolortextbox(#saddr, #caddr, #box, 31 - x, 20 - y, 9, 5, 16 - t);
+        //CrazySpence stuff below
+		drawcolortextbox(#saddr, #caddr, #box, 12,10, 15, 5, blue); //Static Blue box ontop of tutorial effect
+		fill(colorP,white,11); //Fill 11 bytes of Color RAM with white
+		moveto(14,12,$04); //Move to this location in the screen
+		printstring("CRAZYSPENCE",0,11);
+		ch := getKey();
+	end;
+end;
+
+// Plasma procedure
+
+procedure LightPlasma();
+begin
+	c2x:=ax;
+	c2y:=ay;
+	
+	// Set up y-sine table
+	for x:=0 to 25 do begin 
+		siny[x]:=  sine[c2x] + sine[c2y];
+		c2x:=c2x+4;
+		c2y:=c2y+9;
+	end;
+
+	ax:=ax+3;
+	ay:=ay-5;
+
+	// Set up x-sine table
+	for x:=0 to 40 do begin 
+		sinx[x] := sine[c2x] + sine[c2y];
+		c2x:=c2x+3;
+		c2y:=c2y+7;
+
+	end;
+	// Move cursor to (1,y) on $0400 on bank 1
+	moveto(xStart,yStart, hi(screen_char_loc));
+	// moveto could also be replaced with : screenmemory:=$0400 + @y_start*40;
+	
+	colorP:=screen_col_loc + yStart * 40;
+	
+	for y:=yStart to yEnd do begin
+		val:=siny[y];
+		for x:=xStart to xEnd do begin
+			// here, we take (sin[x]+val) and divide by 16. However, since this is a slow procedure,
+			// we have created a lookup table instead!
+			c:=lookupDiv16[ (sinx[x] +val) ];
+			// Set the screen memory
+			screenmemory[x]:= c + @baseCharacter; //loading charsets seems to be broken, just using static square for now --CS
+			// Set color memory
+			colorP[x] := lightfade[ c ];
+		end;
+		// Increase screen memory pointer by 40 (next row)
+		screenmemory:=screenmemory+40;
+		// Increase color pointer by 40 (next row)
+		colorP:=colorP+40;
+	end;
+end;
+
+procedure FirePlasma();
+begin
+	c2x:=ax;
+	c2y:=ay;
+	
+	// Set up y-sine table
+	for x:=0 to 25 do begin 
+		siny[x]:=  sine[c2x] + sine[c2y];
+		c2x:=c2x+4;
+		c2y:=c2y+9;
+	end;
+
+	ax:=ax+3;
+	ay:=ay-5;
+
+	// Set up x-sine table
+	for x:=0 to 25 do begin 
+		sinx[x] := sine[c2x] + sine[c2y];
+		c2x:=c2x+3;
+		c2y:=c2y+7;
+
+	end;
+	// Move cursor to (1,y) on $0400 on bank 1
+	moveto(1,yStart2, hi(screen_char_loc));
+	// moveto could also be replaced with : screenmemory:=$0400 + @y_start*40;
+	
+	colorP:=screen_col_loc + yStart2 * 40;
+	
+	for y:=yStart2 to yEnd2 do begin
+		val:=siny[y];
+		for x:=xStart2 to xEnd2 do begin
+			// here, we take (sin[x]+val) and divide by 16. However, since this is a slow procedure,
+			// we have created a lookup table instead!
+			c:=lookupDiv16[ (sinx[x] +val) ];
+			// Set the screen memory
+			screenmemory[x]:=c + @baseCharacter; //loading charsets seems to be broken, just using static square for now --CS
+			// Set color memory
+			colorP[x] := firefade[ c ];
+		end;
+		// Increase screen memory pointer by 40 (next row)
+		screenmemory:=screenmemory+40;
+		// Increase color pointer by 40 (next row)
+		colorP:=colorP+40;
+	end;
+end;
+procedure InitDivision16();
+begin
+	for x:=0 to 256 do lookupDiv16[x]:=x/16; // Simply store values divided by 16
+end;
+
+procedure CrazyPlasma();
+begin
+	// Set color background
+	screen_bg_col:=black;
+	screen_fg_col:=black;
+	crazyP := screen_col_loc;
+    crazyP := crazyP + 40 * 12 + 16; //Location of Static CrazySpence Box
+	// Set charmap location at $2000
+	InitDivision16();
+	ax:=1;
+	ay:=5;
+	// Clear screen and color memory
+	ClearScreen(key_space, screen_char_loc);
+	// Main loop
+	while (getKey() <> key_space) do begin
+		C128WaitForBlank();
+		LightPlasma();
+	end;
+	while(getKey() = key_space) do // wait til the keypress goes away
+    begin
+    end;
+    while (getKey() <> key_space) do begin
+		C128WaitForBlank();
+		FirePlasma();
+	end;
+	ClearScreen(key_space, screen_char_loc);
+	while(getKey() = key_space) do // wait til the keypress goes away
+    begin
+    end;
+    xEnd := 14;
+    xStart2 :=27; 
+    while (getKey() <> key_space) do begin
+		C128WaitForBlank();
+		LightPlasma();
+		FirePlasma();
+		fill(crazyP,white,11); //Fill 11 bytes of Color RAM with white
+		moveto(16,12,$04); //Move to this location in the screen
+		printstring("CRAZYSPENCE",0,11);
+	end;
+	ClearScreen(key_space, screen_char_loc);
+	ClearScreen(white,screen_col_loc); //change up the colour method here
+	xEnd := 10;
+    xStart2 := 32; 
+	while(true) do begin
+    	C128WaitForBlank();
+		LightPlasma();
+		FirePlasma();
+		moveto(16,12,$04); //Move to this location in the screen
+		printstring("CRAZYSPENCE",0,11);
+		moveto(10,14,$04); //Move to this location in the screen
+		printstring("MADE WITH TSRE 03-2020",0,24);
+		moveto(10,16,$04);
+		printstring("PORTED TO C128 10-2022",0,24);
+	end;
+end;
+
+begin
+   //InitSid(sidfile_1_init);
+   setmemoryconfig(0,1,1,1,0);
+   set1mhzmode();
+   setregularcolormode();
+   settextmode();
+   SetCharsetLocation(charsetLocation);
+   ch := 0;
+   CircleSpence();
+   ch := 0;
+   CrazyBoxes();
+   while(getKey() = key_space) do // wait til the keypress goes away
+   begin
+   end;
+   CrazyPlasma();
+end.
